@@ -2,7 +2,7 @@ import java.io.Serializable;
 
 public class TugObject implements Serializable {
     public String type;
-    public Position pos;
+    public TugPosition pos;
 
     public boolean isnum() {
         return type == "num";
@@ -12,7 +12,7 @@ public class TugObject implements Serializable {
         return type == "str";
     }
 
-    public Object call(Position pos, TugTable global, TugObject... values) {
+    public Object call(TugPosition pos, TugTable global, TugObject... values) {
         return new TugError(
             String.format("attempt to call %s", type), pos
         );

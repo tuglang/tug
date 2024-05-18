@@ -1,8 +1,8 @@
 public class TugNumber extends TugObject {
-    public Position pos;
+    public TugPosition pos;
     public Double value;
 
-    public TugNumber(Position pos, Number value) {
+    public TugNumber(TugPosition pos, Number value) {
         this.pos = pos;
         this.value = value.doubleValue();
         super.type = "num";
@@ -14,7 +14,7 @@ public class TugNumber extends TugObject {
         super.type = "num";
     }
 
-    public TugNumber set_pos(Position pos) {
+    public TugNumber set_pos(TugPosition pos) {
         this.pos = pos;
         return this;
     }

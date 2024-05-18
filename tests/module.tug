@@ -1,2 +1,0 @@
-math = import("math.tugb")
-print(math.sin(2))

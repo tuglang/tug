@@ -8,8 +8,8 @@ public class TugCopy {
     public Object start() {
         if (obj instanceof Double val) return Double.valueOf(val);
         if (obj instanceof String val) return String.valueOf(val);
-        if (obj instanceof TugTable val) return val.clone();
-        if (obj instanceof TugFunction val) return val.clone();
+        if (obj instanceof TugTable val) return val.copy();
+        if (obj instanceof TugFunction val) return val.copy();
         return null;
     }
 }

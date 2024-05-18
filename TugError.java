@@ -2,10 +2,10 @@ import java.util.ArrayList;
 
 public class TugError extends TugObject {
     public String msg;
-    public Position pos;
-    public ArrayList<Position> poses;
+    public TugPosition pos;
+    public ArrayList<TugPosition> poses;
 
-    public TugError(String msg, Position pos) {
+    public TugError(String msg, TugPosition pos) {
         this.msg = msg;
         this.pos = pos;
         this.poses = new ArrayList<>();
@@ -14,7 +14,7 @@ public class TugError extends TugObject {
     public String as_string() {
         StringBuilder builder = new StringBuilder();
         if (poses.size() > 0) builder.append("stacktrace:\n");
-        for (Position pos : poses) {
+        for (TugPosition pos : poses) {
             builder.append("  ");
             builder.append(pos.fn);
             builder.append(":");
@@ -33,7 +33,7 @@ public class TugError extends TugObject {
         return builder.toString();
     }
 
-    public void add(Position pos) {
+    public void add(TugPosition pos) {
         poses.add(pos);
     }
 }

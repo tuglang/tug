@@ -1,8 +1,8 @@
 public class TugString extends TugObject {
-    public Position pos;
+    public TugPosition pos;
     public String value;
 
-    public TugString(Position pos, String value) {
+    public TugString(TugPosition pos, String value) {
         this.pos = pos;
         this.value = value;
         super.type = "str";

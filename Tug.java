@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -17,12 +18,17 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
+import java.util.Set;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 
 public class Tug {
+    public static String TUG_HOME;
+
     @SuppressWarnings("unchecked")
     public static Object run(String text, TugTable global, String fn) {
         Lexer lexer = new Lexer(text, fn);
@@ -42,12 +48,18 @@ public class Tug {
 
     @SuppressWarnings({"resource"})
     public static void shell() {
-        System.out.println("Tug v0.1.0  Copyright (C) 2024 Tylon");
+        System.out.println("Tug v0.1.0  Copyright (C) 2024 Morlus");
         Scanner scanner = new Scanner(System.in);
         TugTable global = TugTable.newDefault();
         while (true) {
             System.out.print("> ");
-            Object res = Tug.run(scanner.nextLine(), global, "stdin");
+            String line;
+            try {
+                line = scanner.nextLine();
+            } catch (NoSuchElementException e) {
+                return;
+            }
+            Object res = Tug.run(line, global, "stdin");
             if (res instanceof TugError err) {
                 System.out.println(err.as_string());
             }
@@ -63,16 +75,16 @@ public class Tug {
         }
 
         File file = new File(filename);
-        if (!file.exists()) {
-            System.out.println("no such java file");
-        }
         Path path = Paths.get(filename);
         path = path.toAbsolutePath();
+        Path abspath = path.toAbsolutePath();
+        Path parentdir = abspath.getParent();
+        System.setProperty("user.dir", parentdir.toString());
         String source;
         try {
             source = new String(Files.readAllBytes(path));
         } catch (IOException e) {
-            System.out.println("no such file or directory");
+            System.out.println("no such file");
             System.exit(1);
             return;
         }
@@ -84,14 +96,18 @@ public class Tug {
             return;
         }
 
-        compiler.run(null, null, null, file.getPath());
+        if (compiler.run(null, null, null, file.getPath()) != 0) {
+            System.out.println("compile error");
+            System.exit(1);
+            return;
+        }
 
         String name = path.getFileName().toString();
         name = name.substring(0, name.lastIndexOf("."));
 
         URLClassLoader classLoader;
         try {
-            classLoader = URLClassLoader.newInstance(new URL[] { file.getParentFile().toURI().toURL() });
+            classLoader = URLClassLoader.newInstance(new URL[] { parentdir.toUri().toURL() });
         } catch (MalformedURLException e) {
             System.out.println("malform url");
             System.exit(1);
@@ -99,7 +115,7 @@ public class Tug {
         }
         Class<?> cls;
         try {
-            cls = Class.forName(name, true, classLoader);
+            cls = classLoader.loadClass(name);
         } catch (ClassNotFoundException e) {
             System.out.println("ClassNotFoundException occurred");
             System.exit(1);
@@ -113,15 +129,20 @@ public class Tug {
 
         TugTable result = new TugTable();
 
+        int total = 0;
         for (Method method : methods) {
             result.set(
                 method.getName(),
-                new TugFunction(method.getName(), null, null, result).setmethod(
+                new TugFunction(method.getName(), null, null, new TugTable()).setmethod(
                     new SerializableMethod(method, cls)
                 )
             );
+            System.out.println("loaded method '" + method.getName() + "'");
+            total++;
         }
+        String totalM = "total methods: " + total;
         
+        total = 0;
         for (Field field : fields) {
             try {
                 result.set(field.getName(), Interpreter.convert((TugObject) field.get(null)));
@@ -134,18 +155,26 @@ public class Tug {
                 System.exit(1);
                 return;
             }
+            System.out.println("loaded field '" + field.getName() + "'");
+            total++;
         }
+        System.out.println(totalM);
+        System.out.println("total fields: " + total);
 
-        Path result_path = Paths.get(name + ".tugb");
+        Path result_path = Paths.get(parentdir.toString(), name + ".tugb");
+        System.out.println("writing " + result_path.toString() + "...");
 
         byte bytes[] = Tug.serialize(result);
-        byte r[] = new byte[bytes.length+3];
+        byte r[] = new byte[bytes.length+4];
         r[0] = (byte) (0x74 << 8);
         r[1] = (byte) (0x75 << 8);
         r[2] = (byte) (0x67 << 4);
+        r[3] = (byte) Interpreter.compile_version;
         for (int idx = 0; idx < bytes.length; idx++) {
-            r[idx + 3] = bytes[idx];
+            r[idx + 4] = bytes[idx];
         }
+
+        if (!Interpreter.no_base64) r = Base64.getEncoder().encode(r);
 
         try {
             Files.write(result_path, r);
@@ -154,6 +183,8 @@ public class Tug {
             System.exit(1);
             return;
         }
+
+        System.out.println("\neverything is done!");
     }
 
     static byte[] serialize(Object obj) {
@@ -164,7 +195,6 @@ public class Tug {
             out.flush();
             return bos.toByteArray();
         } catch (Exception ex) {
-            System.out.println(ex.toString());
             System.out.println("serialization failed");
             System.exit(1);
             return null;
@@ -174,11 +204,26 @@ public class Tug {
     static Object deserialize(byte[] bytes) {
         ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
 
-        try (ObjectInput in = new ObjectInputStream(bis)) {
+        try (ObjectInput in = new ObjectInputStream(bis) {
+            @Override
+            protected Class<?> resolveClass(final ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+                Path p = Paths.get(System.getProperty("user.dir"));
+                URLClassLoader cl = new URLClassLoader(new URL[] {p.toUri().toURL()});
+                Class<?> res;
+                try {
+                    res = cl.loadClass(desc.getName());
+                } catch (ClassNotFoundException e) {
+                    cl.close();
+                    ClassLoader cls = Thread.currentThread().getContextClassLoader();
+                    if (cls == null) return super.resolveClass(desc);
+                    return cls.loadClass(desc.getName());
+                }
+                cl.close();
+                return res;
+            }
+        }) {
             return in.readObject();
         } catch (Exception ex) {
-            System.out.println("deserialization failed");
-            System.exit(1);
             return null;
         }
     }
@@ -188,7 +233,7 @@ public class Tug {
         for (Method method : cls.getDeclaredMethods()) {
             if (!Modifier.isStatic(method.getModifiers()) || !Modifier.isPublic(method.getModifiers())) continue;
             if (!(method.getReturnType().equals(Object.class) || method.getReturnType().equals(TugObject.class))) continue;
-            if (!Arrays.equals(method.getParameterTypes(), new Class<?>[]{Position.class, TugTable.class, TugObject[].class})) continue;
+            if (!Arrays.equals(method.getParameterTypes(), new Class<?>[]{TugPosition.class, TugTable.class, TugArgs.class})) continue;
 
             methods.add(method);
         }
@@ -213,12 +258,29 @@ public class Tug {
     }
 
     public static void main(String[] args) {
+        Interpreter.start_time = System.nanoTime() / 1000000000d;
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg.equals("--skip-eviron")) {
+                Interpreter.skip_eviron = true;
+            } else if (arg.equals("--java-stacktrace")) {
+                Interpreter.java_stacktrace = true;
+            } else if (arg.equals("--no-base64")) {
+                Interpreter.no_base64 = true;
+            }
+        }
+        if (System.getenv("TUG_HOME") == null && !Interpreter.skip_eviron) {
+            System.out.println("evironment variable 'TUG_HOME' isn't set");
+            System.exit(1);
+            return;
+        }
         if (args.length >= 1) {
             if (args[0].equals("run")) {
                 if (args.length < 2) {
                     System.out.println("missing arguments");
+                } else if (args.length > 2) {
                 }
-                Path path = Paths.get(args[1]);
+                Path path = Paths.get(args[args.length-1]);
                 String str;
                 try {
                     str = new String(Files.readAllBytes(path));
@@ -227,14 +289,51 @@ public class Tug {
                     System.exit(1);
                     return;
                 }
-                Object res = Tug.run(str, TugTable.newDefault(), path.toAbsolutePath().toString());
+                Path abspath = path.toAbsolutePath();
+                Path parentdir = abspath.getParent();
+                System.setProperty("user.dir", parentdir.toString());
+                Object res = Tug.run(str, TugTable.newDefault(), abspath.toString());
                 if (res instanceof TugError err) {
                     System.out.println(err.as_string());
                     System.exit(1);
                     return;
                 }
+                Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
+                ArrayList<Thread> aliveThreads = new ArrayList<>();
+                for (Thread t : threadSet) {
+                    if (t.getName().startsWith("TugThread-")) {
+                        if (t.isAlive()) {
+                            aliveThreads.add(t);
+                        }
+                    }
+                }
+                while (true) {
+                    boolean alives = false;
+                    for (Thread t : aliveThreads) {
+                        if (t.isAlive()) alives = true;
+                    }
+                    if (!alives) break;
+                }
             } else if (args[0].equals("jcompile")) {
                 Tug.jcompile(args[1]);
+            } else if (args[0].equals("version")) {
+                System.out.println("Tug v0.1.0  Copyright (C) 2024 Morlus");
+                System.out.println("Interpreter: v" + Interpreter.version);
+                System.out.println("Compiler: v" + Interpreter.compile_version);
+            } else if (args[0].equals("license")) {
+                
+            } else if (args[0].equals("dir")) {
+                System.out.print("home: ");
+                System.out.println(System.getenv("TUG_HOME") == null ? "none" : System.getenv("TUG_HOME"));
+                System.out.print("current: ");
+                System.out.println(new File("").getAbsolutePath());
+            } else if (args[0].equals("help")) {
+                System.out.println("Commands:");
+                System.out.println("  run - Run a tug program from specified file");
+                System.out.println("  jcompile - Compile java code into tug module (.tugb file)");
+                System.out.println("  version - Compile java code into tug module (.tugb file)");
+            } else if (args[0].startsWith("-") || args[0].startsWith("--")) {
+                Tug.shell();
             } else {
                 System.out.println("no such command");
                 System.exit(1);

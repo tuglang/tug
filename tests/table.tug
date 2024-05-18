@@ -1,4 +1,0 @@
-table = {
-    print = print
-}
-table.print("hi")

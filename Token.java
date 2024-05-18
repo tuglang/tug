@@ -1,15 +1,15 @@
 public class Token {
     public TokenType type;
     public Object value;
-    public Position pos;
+    public TugPosition pos;
 
-    public Token(TokenType type, Object value, Position pos) {
+    public Token(TokenType type, Object value, TugPosition pos) {
         this.type = type;
         this.value = value;
         this.pos = pos;
     }
 
-    public Token(TokenType type, Position pos) {
+    public Token(TokenType type, TugPosition pos) {
         this.type = type;
         value = null;
         this.pos = pos;

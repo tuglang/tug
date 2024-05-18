@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 public class Parser {
     public ArrayList<Token> tokens;
@@ -88,6 +89,46 @@ public class Parser {
                 }
 
                 Token op = tok;
+
+                if (tok.match(TokenType.LPAREN)) {
+                    Object args = get_args();
+                    if (args instanceof TugError) return args;
+
+                    Object value = identifier;
+
+                    for (int idx = 0; idx < indices.size(); idx++) {
+                        value = new Expression(value, tokens.get(idx), indices.get(0));
+                    }
+
+                    value = new Task(TaskType.CALLFUNC_STATEMENT, value, args);
+
+                    advance();
+                    if (tok.match(TokenType.LPAREN)) {
+                        while (true) {
+                            args = get_args();
+                            if (args instanceof TugError) return args;
+                            advance();
+                            
+                            value = new Task(TaskType.CALLFUNC_STATEMENT, value, args);
+                            if (!tok.match(TokenType.LPAREN)) break;
+                            else advance();
+                        }
+                        advance();
+                    }
+                    value = attrs(value);
+                    if (value instanceof TugError) return value;
+                    if (value instanceof Task task) {
+                        tasks.add(task);
+                    } else {
+                        tasks.add(new Task(TaskType.CALL_EXPRESSION, value));
+                    }
+                    return true;
+                }
+
+                if (tok.matches(TokenType.ADDADD, TokenType.SUBSUB)) {
+                    tasks.add(new Task(TaskType.ATTR_POSTFIX_STATEMENT, identifier, indices, tokens, op));
+                    return false;
+                }
                 
                 if (!tok.matches(
                     TokenType.EQ,
@@ -108,6 +149,8 @@ public class Parser {
 
                 tasks.add(new Task(TaskType.ASSIGN_ATTR_STATEMENT, identifier, indices, tokens, op, value));
                 return true;
+            } else if (tok.matches(TokenType.ADDADD, TokenType.SUBSUB)) {
+                tasks.add(new Task(TaskType.POSTFIX_STATEMENT, identifier, tok));
             }
         } else if (tok.match(TokenType.KW_IF)) {
             Object if_expr = this.if_expr();
@@ -146,7 +189,7 @@ public class Parser {
         ArrayList<Object> args = new ArrayList<>();
         
         while (!tok.match(TokenType.RPAREN)) {
-            Object value = get_expr();
+            Object value = expr();
             if (value instanceof TugError) return value;
 
             args.add(value);
@@ -180,24 +223,44 @@ public class Parser {
         );
         Token name = tok;
 
+        ArrayList<Token> tokens = new ArrayList<>();
+        ArrayList<Object> indices = new ArrayList<>();
+
         advance();
+        boolean method = tok.matches(TokenType.DOT, TokenType.LSQUARE);
+        if (method) {
+            while (tok.matches(TokenType.DOT, TokenType.LSQUARE)) {
+                if (tok.match(TokenType.DOT)) {
+                    Token op = tok;
+                    advance();
+                    if (!tok.match(TokenType.IDENTIFIER)) return new TugError(
+                        "expected identifier", tok.pos
+                    );
+                    indices.add(new Token(TokenType.STR, tok.value, tok.pos));
+                    tokens.add(op);
+                    advance();
+                } else if (tok.match(TokenType.LSQUARE)) {
+                    Token square = tok;
+                    advance();
+    
+                    Object expr = this.expr();
+                    if (expr instanceof TugError) return expr;
+    
+                    if (!tok.match(TokenType.RSQUARE)) return new TugError(
+                        "unclosed '['", square.pos
+                    );
+                    indices.add(expr);
+                    tokens.add(new Token(TokenType.DOT, square.pos));
+                    advance();
+                }
+            }
+        }
         if (!tok.match(TokenType.LPAREN)) return new TugError(
             "expected '('", tok.pos
         );
 
-        advance();
-        ArrayList<Token> args = new ArrayList<>();
-        while (!tok.match(TokenType.RPAREN)) {
-            if (!tok.match(TokenType.IDENTIFIER)) return new TugError(
-                "expected identifier or ')'", tok.pos
-            );
-            args.add(tok);
-            advance();
-            if (tok.match(TokenType.COMMA)) advance();
-            else if (!tok.match(TokenType.RPAREN)) return new TugError(
-                "expected ',' or ')'", tok.pos
-            );
-        }
+        Object args = get_id_args();
+        if (args instanceof TugError) return args;
         advance();
         
         if (!tok.match(TokenType.LCURLY)) return new TugError(
@@ -217,6 +280,10 @@ public class Parser {
 
         ArrayList<Task> body = (ArrayList<Task>) stmts;
 
+        if (method) {
+            return new Task(TaskType.ASSIGN_METHOD_STATEMENT, name, indices, tokens, args, body);
+        }
+
         return new Task(TaskType.FUNC_STATEMENT, name, args, body);
     }
 
@@ -233,7 +300,7 @@ public class Parser {
                 advance();
             }
 
-            amount = get_expr();
+            amount = expr();
             if (amount instanceof TugError) return amount;
 
             curly = tok;
@@ -242,6 +309,9 @@ public class Parser {
                 "expected '{'", tok.pos
             );
             
+            advance();
+        } else {
+            curly = tok;
             advance();
         }
 
@@ -349,12 +419,38 @@ public class Parser {
         return if_case;
     }
 
+    Object get_id_args() {
+        advance();
+        ArrayList<Token> args = new ArrayList<>();
+        while (!tok.match(TokenType.RPAREN)) {
+            if (!tok.match(TokenType.IDENTIFIER)) return new TugError(
+                "expected identifier or ')'", tok.pos
+            );
+            args.add(tok);
+            advance();
+            if (tok.match(TokenType.MUL)) {
+                args.add(tok);
+                advance();
+                if (!tok.match(TokenType.RPAREN)) return new TugError(
+                    "expected ')'", tok.pos
+                );
+                break;
+            }
+            if (tok.match(TokenType.COMMA)) advance();
+            else if (!tok.match(TokenType.RPAREN)) return new TugError(
+                "expected ',' or ')'", tok.pos
+            );
+        }
+        return args;
+    }
+
     Object get_expr() {
         Object expr = this.expr();
         return expr;
     }
 
-    Object factor() {
+    @SuppressWarnings("unchecked")
+	Object factor() {
         Token tok = this.tok;
 
         if (tok.matches(TokenType.ADD, TokenType.SUB)) {
@@ -364,12 +460,44 @@ public class Parser {
             return new Expression(tok, attrs(factor));
         } else if (tok.isvalue()) {
             advance();
+            if (tok.match(TokenType.IDENTIFIER) && this.tok.matches(TokenType.ADDADD, TokenType.SUBSUB)) {
+                Token op = this.tok;
+                advance();
+                return new Task(TaskType.POSTFIX_STATEMENT, tok, op);
+            }
             Object value = attrs(tok);
+            if (value instanceof TugError) return value;
+            if (this.tok.matches(TokenType.ADDADD, TokenType.SUBSUB)) {
+                Token op = this.tok;
+                advance();
+                if (value instanceof Expression expr) {
+                    if (expr.op.match(TokenType.DOT)) {
+                        Object key = expr.right;
+                        Object obj = expr.left;
+
+                        return new Task(TaskType.ATTR_POSTFIX_EXPRESSION, obj, expr.op, key, op);
+                    }
+                } else return new TugError(
+                    "invalid syntax", op.pos
+                );
+            }
             if (this.tok.match(TokenType.LPAREN)) {
                 Object args = get_args();
                 if (args instanceof TugError) return args;
+                value = new Task(TaskType.CALLFUNC_STATEMENT, value, args);
                 advance();
-                return new Task(TaskType.CALLFUNC_STATEMENT, value, args);
+                if (this.tok.match(TokenType.LPAREN)) {
+                    while (true) {
+                        args = get_args();
+                        if (args instanceof TugError) return args;
+                        
+                        value = new Task(TaskType.CALLFUNC_STATEMENT, value, args);
+                        if (!tok.match(TokenType.LPAREN)) break;
+                        else advance();
+                    }
+                    advance();
+                }
+                return attrs(value);
             }
             return value;
         } else if (tok.match(TokenType.LPAREN)) {
@@ -387,6 +515,33 @@ public class Parser {
             if (table_expr instanceof TugError) return table_expr;
             advance();
             return attrs(table_expr);
+        } else if (tok.match(TokenType.KW_FUNC)) {
+            advance();
+            if (!this.tok.match(TokenType.LPAREN)) return new TugError(
+                "expected '('", this.tok.pos
+            );
+
+            Object args = get_id_args();
+            if (args instanceof TugError) return args;
+            advance();
+            
+            if (!this.tok.match(TokenType.LCURLY)) return new TugError(
+                "expected '{'", this.tok.pos
+            );
+
+            Token curly = this.tok;
+
+            advance();
+            Object stmts = get_stmts(TokenType.EOF, TokenType.RCURLY);
+            if (stmts instanceof TugError) return stmts;
+
+            if (!this.tok.match(TokenType.RCURLY)) return new TugError(
+                "unclosed '{'", curly.pos
+            );
+            advance();
+
+            ArrayList<Task> body = (ArrayList<Task>) stmts;
+            return new Task(TaskType.FUNC_STATEMENT, new Token(TokenType.IDENTIFIER, tok.pos), args, body);
         }
 
         return new TugError(
@@ -441,7 +596,7 @@ public class Parser {
             );
         }
 
-        return map;
+        return new ArrayList<Object>(List.of(map, curly));
     }
 
     Object term() {
@@ -476,7 +631,7 @@ public class Parser {
     }
 
     Object attrs(Object left) {
-        while (tok.matches(TokenType.DOT, TokenType.LSQUARE)) {
+        while (tok.matches(TokenType.DOT, TokenType.LSQUARE, TokenType.LPAREN)) {
             if (tok.match(TokenType.DOT)) {
                 Token op = tok;
                 advance();
@@ -496,6 +651,18 @@ public class Parser {
                     "unclosed '['", square.pos
                 );
                 left = new Expression(left, new Token(TokenType.DOT, square.pos), expr);
+                advance();
+            } else if (tok.match(TokenType.LPAREN)) {
+                Token paren = tok;
+                
+                Object args = get_args();
+                if (args instanceof TugError) return args;
+
+                if (!tok.match(TokenType.RPAREN)) return new TugError(
+                    "unclosed '('", paren.pos
+                );
+
+                left = new Task(TaskType.CALLFUNC_STATEMENT, left, args);
                 advance();
             }
         }

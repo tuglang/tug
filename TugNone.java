@@ -1,7 +1,7 @@
 public class TugNone extends TugObject {
-    public Position pos;
+    public TugPosition pos;
 
-    public TugNone(Position pos) {
+    public TugNone(TugPosition pos) {
         this.pos = pos;
         super.type = "none";
     }

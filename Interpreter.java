@@ -5,12 +5,20 @@ public class Interpreter {
     public ArrayList<Task> tasks;
     public TugTable global;
 
+    // System Variables
+    public static double start_time = System.nanoTime() / 1000000000d;
+    public static boolean skip_eviron = false;
+    public static boolean java_stacktrace = false;
+    public static String version = "0.1.0";
+    public static int compile_version = 0;
+    public static boolean no_base64 = false;
+
     public Interpreter(ArrayList<Task> tasks, TugTable global) {
         this.tasks = tasks;
         this.global = global;
     }
 
-    public Object start() {
+    Object start() {
         Object ret = execute(tasks);
         if (ret instanceof Task taskret) {
             if (taskret.match(TaskType.SKIP_STATEMENT)) return new TugError(
@@ -38,7 +46,7 @@ public class Interpreter {
             } else if (task.match(TaskType.SKIP_STATEMENT)) {
                 return task;
             } else if (task.match(TaskType.FUNC_STATEMENT)) {
-                res = func_statement(task);
+                func_statement(task);
             } else if (task.match(TaskType.CALLFUNC_STATEMENT)) {
                 Object res_ = callfunc_statement(task);
                 if (res_ instanceof TugError) return res_;
@@ -46,10 +54,100 @@ public class Interpreter {
                 return refresh(task.values.get(0));
             } else if (task.match(TaskType.ASSIGN_ATTR_STATEMENT)) {
                 res = assign_attr_statement(task);
+            } else if (task.match(TaskType.CALLFUNC_STATEMENT)) {
+                refresh(task.values.get(0));
+            } else if (task.match(TaskType.ASSIGN_METHOD_STATEMENT)) {
+                res = assign_method_statement(task);
+            } else if (task.match(TaskType.POSTFIX_STATEMENT)) {
+                postfix_statement(task);
+            } else if (task.match(TaskType.ATTR_POSTFIX_STATEMENT)) {
+                attr_postfix_statement(task);
             }
             if (res instanceof TugError) return res;
             if (res instanceof TugObject) return res;
         }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    Object attr_postfix_statement(Task task) {
+        
+        Object value = task.values.get(0);
+
+        ArrayList<Object> indices = (ArrayList<Object>) task.values.get(1);
+        ArrayList<Token> tokens = (ArrayList<Token>) task.values.get(2);
+        Token op = (Token) task.values.get(3);
+
+        for (int idx = 0; idx < indices.size() - 1; idx++) {
+            value = new Expression(value, tokens.get(idx), indices.get(0));
+        }
+
+        Object og_val = new Expression(value, tokens.get(tokens.size() - 1), indices.get(indices.size() - 1));
+
+        Object val = refresh(value);
+        if (val instanceof TugError) return val;
+
+        Object key = refresh(indices.get(indices.size() - 1));
+        if (key instanceof TugError) return key;
+
+        Object tugobj = refresh(og_val);
+        if (tugobj instanceof TugError) return tugobj;
+
+        Object res = ((TugObject) tugobj).add(new TugNumber(op.match(TokenType.ADDADD) ? 1 : -1));
+        if (res instanceof TugError) return res;
+
+        ((TugObject) val).set((TugObject) key, (TugObject) res);
+        return res;
+    }
+
+    Object postfix_statement(Task task) {
+        Token identifier = (Token) task.values.get(0);
+        Token op = (Token) task.values.get(1);
+
+        Object obj = refresh(identifier);
+        if (obj instanceof TugError) return obj;
+
+        Object res = ((TugObject) obj).add(new TugNumber(op.match(TokenType.ADDADD) ? 1 : -1));
+        if (res instanceof TugError) return res;
+
+        global.set(identifier.value, convert((TugObject) res));
+        return res;
+    }
+
+    @SuppressWarnings("unchecked")
+    Object assign_method_statement(Task task) {
+        Object value = task.values.get(0);
+
+        ArrayList<Object> indices = (ArrayList<Object>) task.values.get(1);
+        ArrayList<Token> tokens = (ArrayList<Token>) task.values.get(2);
+
+        for (int idx = 0; idx < indices.size() - 1; idx++) {
+            value = new Expression(value, tokens.get(idx), indices.get(0));
+        }
+
+        Object val = refresh(value);
+        if (val instanceof TugError) return val;
+
+        Object key = refresh(indices.get(indices.size() - 1));
+        if (key instanceof TugError) return key;
+
+        TugObject tugobj = (TugObject) val;
+
+        ArrayList<Token> args = (ArrayList<Token>) task.values.get(3);
+        ArrayList<Task> body = (ArrayList<Task>) task.values.get(4);
+
+        ArrayList<String> arg_names = new ArrayList<>();
+        boolean a = false;
+        for (Token arg : args) {
+            if (arg.match(TokenType.MUL)) {
+                a = true;
+                break;
+            }
+            arg_names.add((String) arg.value);
+        }
+
+        tugobj.set((TugObject) key, new TugFunction(((TugString) TugFunction.tostr(null, global, (TugObject) key)).value, arg_names, body, global, a));
+
         return null;
     }
 
@@ -101,7 +199,7 @@ public class Interpreter {
         return null;
     }
 
-    Position getpos(Object obj) {
+    TugPosition getpos(Object obj) {
         if (obj instanceof Token tok) {
             return tok.pos;
         } else if (obj instanceof Expression expr) {
@@ -112,9 +210,9 @@ public class Interpreter {
 
     @SuppressWarnings("unchecked")
     Object callfunc_statement(Task task) {
-        Position pos = getpos(task.values.get(0));
+        TugPosition pos = getpos(task.values.get(0));
         Object obj = refresh(task.values.get(0));
-        if (obj instanceof Error) return obj;
+        if (obj instanceof TugError) return obj;
         TugObject function = (TugObject) obj;
         ArrayList<Object> args = (ArrayList<Object>) task.values.get(1);
 
@@ -134,13 +232,20 @@ public class Interpreter {
         ArrayList<Task> body = (ArrayList<Task>) task.values.get(2);
 
         ArrayList<String> arg_names = new ArrayList<>();
+        boolean a = false;
         for (Token arg : args) {
+            if (arg.match(TokenType.MUL)) {
+                a = true;
+                break;
+            }
             arg_names.add((String) arg.value);
         }
 
-        global.set(name.value, new TugFunction((String) name.value, arg_names, body, global));
+        TugFunction func = new TugFunction((String) name.value, arg_names, body, global, a);
 
-        return null;
+        global.set(name.value, func);
+
+        return func;
     }
 
     Object variable_assignment(Task task) {
@@ -272,6 +377,7 @@ public class Interpreter {
         if (obj instanceof TugNone) return null;
         if (obj instanceof TugFunction func) return func;
         if (obj instanceof TugTable table) return table;
+        if (obj instanceof TugCustomObject cobj) return cobj;
         return null;
     }
 
@@ -280,6 +386,7 @@ public class Interpreter {
         if (obj instanceof String val) return new TugString(val);
         if (obj instanceof TugFunction func) return func;
         if (obj instanceof TugTable table) return table;
+        if (obj instanceof TugCustomObject cobj) return cobj;
         return new TugNone();
     }
 
@@ -358,9 +465,34 @@ public class Interpreter {
         } else if (value instanceof Task task) {
             if (task.match(TaskType.CALLFUNC_STATEMENT)) {
                 return callfunc_statement(task);
+            } else if (task.match(TaskType.POSTFIX_STATEMENT)) {
+                return postfix_statement(task);
+            } else if (task.match(TaskType.ATTR_POSTFIX_EXPRESSION)) {
+                Object obj = task.values.get(0);
+                Token dot = (Token) task.values.get(1);
+                Object key = task.values.get(2);
+                Token op = (Token) task.values.get(3);
+
+                Object val = refresh(obj);
+                if (val instanceof TugError) return val;
+
+                Object k_val = refresh(key);
+                if (k_val instanceof TugError) return k_val;
+
+                Object expr = new Expression(obj, dot, key);
+                Object og_val = refresh(expr);
+                if (og_val instanceof TugError) return og_val;
+
+                Object res = ((TugObject) og_val).add(new TugNumber(op.match(TokenType.ADDADD) ? 1 : -1));
+                if (res instanceof TugError) return res;
+
+                ((TugObject) val).set((TugObject) k_val, (TugObject) res);
+                return res;
+            } else if (task.match(TaskType.FUNC_STATEMENT)) {
+                return func_statement(task);
             }
-        } else if (value instanceof HashMap) {
-            HashMap<Object, Object> map = (HashMap<Object, Object>) value;
+        } else if (value instanceof ArrayList l) {
+            HashMap<Object, Object> map = (HashMap<Object, Object>) l.get(0);
             TugTable res = new TugTable();
             for (HashMap.Entry<Object, Object> entry : map.entrySet()) {
                 Object key = refresh(entry.getKey());
@@ -370,6 +502,7 @@ public class Interpreter {
 
                 res.set(convert((TugObject) key), convert((TugObject) value_));
             }
+            res.pos = ((Token) l.get(1)).pos;
             return res;
         }
         return null;

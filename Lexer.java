@@ -2,12 +2,12 @@ import java.util.ArrayList;
 
 public class Lexer {
     public String text;
-    public Position pos;
+    public TugPosition pos;
     public char current_char;
 
     public Lexer(String text, String fn) {
         this.text = text;
-        pos = new Position(-1, -1, 1, fn);
+        pos = new TugPosition(-1, -1, 1, fn);
         advance();
     }
 
@@ -28,39 +28,39 @@ public class Lexer {
 
         while (current_char != '\0') {
             if (current_char == '+') {
-                Position cpos = pos.copy();
+                TugPosition cpos = pos.copy();
                 advance();
                 if (current_char == '+') tokens.add(new Token(TokenType.ADDADD, cpos));
-                if (current_char == '=') tokens.add(new Token(TokenType.ADDEQ, cpos));
+                else if (current_char == '=') tokens.add(new Token(TokenType.ADDEQ, cpos));
                 else {tokens.add(new Token(TokenType.ADD, cpos)); continue;}
             } else if (current_char == '-') {
-                Position cpos = pos.copy();
+                TugPosition cpos = pos.copy();
                 advance();
                 if (current_char == '-') tokens.add(new Token(TokenType.SUBSUB, cpos));
-                if (current_char == '=') tokens.add(new Token(TokenType.SUBEQ, cpos));
+                else if (current_char == '=') tokens.add(new Token(TokenType.SUBEQ, cpos));
                 else {tokens.add(new Token(TokenType.SUB, cpos)); continue;}
             } else if (current_char == '*') {
-                Position cpos = pos.copy();
+                TugPosition cpos = pos.copy();
                 advance();
                 if (current_char == '=') tokens.add(new Token(TokenType.MULEQ, cpos));
                 else {tokens.add(new Token(TokenType.MUL, cpos)); continue;}
             } else if (current_char == '/') {
-                Position cpos = pos.copy();
+                TugPosition cpos = pos.copy();
                 advance();
                 if (current_char == '=') tokens.add(new Token(TokenType.DIVEQ, cpos));
                 else {tokens.add(new Token(TokenType.DIV, cpos)); continue;}
             } else if (current_char == '^') {
-                Position cpos = pos.copy();
+                TugPosition cpos = pos.copy();
                 advance();
                 if (current_char == '=') tokens.add(new Token(TokenType.POWEQ, cpos));
                 else {tokens.add(new Token(TokenType.POW, cpos)); continue;}
             } else if (current_char == '%') {
-                Position cpos = pos.copy();
+                TugPosition cpos = pos.copy();
                 advance();
                 if (current_char == '=') tokens.add(new Token(TokenType.MODEQ, cpos));
                 else {tokens.add(new Token(TokenType.MOD, cpos)); continue;}
             } else if (current_char == '=') {
-                Position cpos = this.pos.copy();
+                TugPosition cpos = this.pos.copy();
                 advance();
                 if (current_char == '=') {
                     tokens.add(new Token(TokenType.EQEQ, cpos));
@@ -69,7 +69,7 @@ public class Lexer {
                     continue;
                 }
             } else if (current_char == '!') {
-                Position cpos = this.pos.copy();
+                TugPosition cpos = this.pos.copy();
                 advance();
                 if (current_char == '=') {
                     tokens.add(new Token(TokenType.NEQ, cpos));
@@ -78,7 +78,7 @@ public class Lexer {
                     continue;
                 }
             } else if (current_char == '>') {
-                Position cpos = this.pos.copy();
+                TugPosition cpos = this.pos.copy();
                 advance();
                 if (current_char == '=') {
                     tokens.add(new Token(TokenType.GE, cpos));
@@ -87,7 +87,7 @@ public class Lexer {
                     continue;
                 }
             } else if (current_char == '<') {
-                Position cpos = this.pos.copy();
+                TugPosition cpos = this.pos.copy();
                 advance();
                 if (current_char == '=') {
                     tokens.add(new Token(TokenType.LE, cpos));
@@ -96,7 +96,7 @@ public class Lexer {
                     continue;
                 }
             } else if (current_char == '&') {
-                Position cpos = this.pos.copy();
+                TugPosition cpos = this.pos.copy();
                 advance();
                 if (current_char == '&') {
                     tokens.add(new Token(TokenType.AND, cpos));
@@ -106,7 +106,7 @@ public class Lexer {
                     );
                 }
             } else if (current_char == '|') {
-                Position cpos = this.pos.copy();
+                TugPosition cpos = this.pos.copy();
                 advance();
                 if (current_char == '|') {
                     tokens.add(new Token(TokenType.OR, cpos));
@@ -166,13 +166,20 @@ public class Lexer {
     }
 
     Object make_str() {
-        Position pos = this.pos.copy();
+        TugPosition pos = this.pos.copy();
         char deli = current_char;
         advance();
 
         StringBuilder builder = new StringBuilder();
 
         while (current_char != '\0' && current_char != deli && current_char != '\n') {
+            if (current_char == '\\') {
+                advance();
+                if (current_char == 'n') builder.append("\n");
+                else builder.append("\\".concat(String.valueOf(current_char)));
+                advance();
+                continue;
+            }
             builder.append(current_char);
             advance();
         }
@@ -185,7 +192,7 @@ public class Lexer {
     }
 
     Object make_num() {
-        Position pos = this.pos.copy();
+        TugPosition pos = this.pos.copy();
         StringBuilder builder = new StringBuilder();
         builder.append(current_char);
         advance();
@@ -206,7 +213,7 @@ public class Lexer {
     }
 
     Token make_identifier() {
-        Position pos = this.pos.copy();
+        TugPosition pos = this.pos.copy();
         StringBuilder builder = new StringBuilder();
         builder.append(current_char);
         advance();
