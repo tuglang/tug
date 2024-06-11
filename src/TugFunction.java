@@ -1,5 +1,6 @@
 import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -28,10 +29,12 @@ public class TugFunction extends TugObject {
         }
         
         Object str = TugFunction.tostr(pos, global, values[0]);
-        System.out.print(((TugString) str).value);
+        String string = ((TugString) str).value;
         
-        if (values.length == 1) System.out.print("\n");
-        else System.out.print(((TugString) TugFunction.tostr(pos, global, values[1])).value);
+        if (values.length == 1) string += "\n";
+        else string += ((TugString) TugFunction.tostr(pos, global, values[1])).value;
+
+        System.out.print(string);
 
         return new TugNone();
     }
@@ -94,41 +97,56 @@ public class TugFunction extends TugObject {
         return new TugNumber(System.nanoTime() / 1000000000d - Interpreter.start_time);
     }
 
-    static Object checkpath(String strpath, TugPosition pos) {
-        File file = new File(strpath);
-        if (!Files.exists(file.toPath())) {
-            file = new File(strpath + ".tug");
-            if (!Files.exists(file.toPath())) {
-                file = new File(strpath + ".tugb");
-                String dir = System.getenv("TUG_HOME");
-                dir = Paths.get(dir, "library").toAbsolutePath().toString();
-                if (!Files.exists(file.toPath())) {
-                    Object res = checkpath_dir(strpath, pos, dir);
-                    if (res instanceof TugError) {
-                        dir = Paths.get(dir, "modules").toAbsolutePath().toString();
-                        return checkpath_dir(strpath, pos, dir);
-                    }
-                    return res;
-                } else strpath = strpath + ".tugb";
-            } else strpath = strpath + ".tug";
+    public static String checkPath(String name) {
+        if (fileExists(name)) {
+            return name;
         }
-        return strpath;
+
+        if (fileExists(name + ".tug")) {
+            return name + ".tug";
+        }
+
+        if (fileExists(name + ".tugb")) {
+            return name + ".tugb";
+        }
+
+        String tugHome = System.getenv("TUG_HOME");
+
+        if (tugHome != null) {
+            String paths[] = tugHome.split(";");
+            for (String path : paths) {
+                if (fileExists(path + "/library/" + name)) {
+                    return path + "/library/" + name;
+                }
+
+                if (fileExists(tugHome + "/modules/" + name)) {
+                    return path + "/modules/" + name;
+                }
+
+                if (fileExists(path + "/library/" + name + ".tug")) {
+                    return path + "/library/" + name + ".tug";
+                }
+
+                if (fileExists(path + "/modules/" + name + ".tug")) {
+                    return path + "/modules/" + name + ".tug";
+                }
+
+                if (fileExists(path + "/library/" + name + ".tugb")) {
+                    return path + "/library/" + name + ".tugb";
+                }
+
+                if (fileExists(path + "/modules/" + name + ".tugb")) {
+                    return path + "/modules/" + name + ".tugb";
+                }
+            }
+        }
+
+        return null;
     }
 
-    static Object checkpath_dir(String strpath, TugPosition pos, String dir) {
-        File file = new File(dir, strpath);
-        if (!Files.exists(file.toPath())) {
-            file = new File(dir, strpath + ".tug");
-            if (!Files.exists(file.toPath())) {
-                file = new File(dir, strpath + ".tugb");
-                if (!Files.exists(file.toPath())) return new TugError(
-                    "module not found", pos
-                );
-                else strpath = file.getAbsolutePath();
-            }
-            else strpath = file.getAbsolutePath();
-        }
-        return strpath;
+    private static boolean fileExists(String path) {
+        File file = new File(path);
+        return file.exists();
     }
 
     static byte[] decode(String val) {
@@ -150,8 +168,10 @@ public class TugFunction extends TugObject {
         String filename = ((TugString) TugFunction.tostr(pos, global, values[0])).value;
         
         filename = Paths.get(filename).toString();
-        Object res = checkpath(filename, pos);
-        if (res instanceof TugError) return res;
+        Object res = checkPath(filename);
+        if (res == null) return new TugError(
+            "no such module", pos
+        );
         filename = (String) res;
         Path path = Paths.get(filename).toAbsolutePath();
         String str;
@@ -163,15 +183,20 @@ public class TugFunction extends TugObject {
                 "unreadable file", pos
             );
         }
-        byte decoded[] = decode(new String(bytes));
+        byte decoded[];
+        try {
+            decoded = decode(new String(bytes, "ISO-8859-1"));
+        } catch (UnsupportedEncodingException e) {
+            return new TugError("decoding failed", pos);
+        }
         if (decoded == null);
         else bytes = decoded;
 
         if (bytes.length >= 3) {
-            int magic = bytes[0] | bytes[1] | bytes[2];
+            String magic = new String(new byte[]{bytes[0], bytes[1], bytes[2]});
 
             if ((int) bytes[3] == Interpreter.compile_version) {
-                if (magic == 112) {
+                if (magic.equals("TUG")) {
                     byte objbytes[] = new byte[bytes.length-4];
                     for (int idx = 4; idx < bytes.length; idx++) {
                         objbytes[idx-4] = bytes[idx];
@@ -200,7 +225,7 @@ public class TugFunction extends TugObject {
     public static Object pairs(TugPosition pos, TugTable global, TugObject... values) {
         if (values.length == 0) return new TugError(
             "expected table for argument #1 to 'exec'", pos
-        ); else if (values[0].type != "table") return new TugError(
+        ); else if (!(values[0] instanceof TugTable)) return new TugError(
             "expected table for argument #1 to 'pairs'", pos
         );
         TugTable table = (TugTable) values[0];
@@ -219,13 +244,21 @@ public class TugFunction extends TugObject {
             "expected str or table for argument #1 to 'len'", pos
         );
         if (values[0] instanceof TugString val) return new TugNumber(val.value.length());
-        if (values[0] instanceof TugTable val) return new TugNumber(val.size());
+        if (values[0] instanceof TugTable val) {
+            if (val.object) {
+                Object v = val.get("__len");
+                if (v == null) return new TugNumber(val.size());
+                TugObject func = Interpreter.deconvert(v);
+                return func.call(pos, global, new TugNone());
+            } else return new TugNumber(val.size());
+        }
         return new TugError(
             "expected str or table for argument #1 to 'len'", pos
         );
     }
 
     public static Object tostr(TugPosition pos, TugTable global, TugObject... values) {
+        if (values.length == 0) return new TugNone();
         Object obj = Interpreter.convert(values[0]);
         if (obj instanceof Double val) {
             if (String.valueOf(val) == "Infinity") return new TugString("inf");
@@ -233,15 +266,31 @@ public class TugFunction extends TugObject {
             else return new TugString(String.valueOf(val).toLowerCase());
         } else if (obj instanceof TugFunction func)
         return new TugString(String.format("func: %s", Integer.toHexString(func.hashCode())));
-        else if (obj instanceof TugTable table)
-        return new TugString(String.format("table: %s", Integer.toHexString(table.hashCode())));
+        else if (obj instanceof TugTable table) {
+            if (table.object) {
+                Object v = table.get("__type");
+                if (v == null) {
+                    return new TugString(String.format("table: %s", Integer.toHexString(table.hashCode())));
+                }
+                TugObject val = Interpreter.deconvert(v);
+                return new TugString(String.format(
+                    "%s: %s",
+                    ((TugString) tostr(pos, global, val)).value,
+                    Integer.toHexString(table.hashCode())
+                ));
+            } else
+            return new TugString(String.format("table: %s", Integer.toHexString(table.hashCode())));
+        }
         else if (obj == null) return new TugString("none");
+        else if (obj instanceof TugNone) return new TugString("none");
         else if (obj instanceof TugCustomObject cobj)
         return new TugString(String.format("%s: %s", cobj.type, Integer.toHexString(cobj.hashCode())));
+        else if (obj instanceof String s) return new TugString(s);
         else return new TugString(String.valueOf(obj));
     }
 
     public static Object tonum(TugPosition pos, TugTable global, TugObject... values) {
+        if (values.length == 0) return new TugNone();
         Object obj = Interpreter.convert(values[0]);
         if (!(obj instanceof String)) return new TugNone();
         try {
@@ -249,6 +298,26 @@ public class TugFunction extends TugObject {
         } catch (NumberFormatException e) {
             return new TugNone();
         }
+    }
+
+    public static Object _call(TugPosition pos, TugTable global, TugObject... values) {
+        if (values.length == 0) return new TugError(
+            "expected func for argument #1 to 'call'", pos
+        );
+        if (values[0] instanceof TugFunction func) {
+            TugObject args[] = new TugObject[values.length-1];
+            for (int i = 1; i < values.length; i++) {
+                args[i-1] = values[i];
+            }
+            Object ret = func.call(pos, global, args);
+            if (ret instanceof TugError err) {
+                return new TugTable(0d, err.msg);
+            }
+            return new TugTable(1d, Interpreter.convert((TugObject) ret));
+        }
+        return new TugError(
+            "expected func for argument #1 to 'call'", pos
+        );
     }
 
     public TugFunction(TugPosition pos, String name, ArrayList<String> arg_names, ArrayList<Task> body, TugTable global) {
@@ -266,6 +335,11 @@ public class TugFunction extends TugObject {
         this.body = body;
         this.global = global.copy();
         super.type = "func";
+    }
+
+    public TugFunction(TugTable global, Class<?> main_class, Method method) {
+        this.method = new SerializableMethod(method, main_class);
+        this.global = global.copy();
     }
 
     public TugFunction(String name, ArrayList<String> arg_names, ArrayList<Task> body, TugTable global, boolean args) {
@@ -308,7 +382,11 @@ public class TugFunction extends TugObject {
             Class<?> tugfunc = this.getClass();
             try {
                 Method method = tugfunc.getDeclaredMethod(builtin, new Class<?>[]{TugPosition.class, TugTable.class, TugObject[].class});
-                return method.invoke(null, pos, global, values);
+                Object res = method.invoke(null, pos, global, values);
+                if (res instanceof TugError err) {
+                    err.add(pos);
+                }
+                return res;
             } catch (NoSuchMethodException e) {
                 if (Interpreter.java_stacktrace) e.printStackTrace();
                 return new TugError(
@@ -328,7 +406,11 @@ public class TugFunction extends TugObject {
         }
         if (method != null) {
             try {
-                return method.toMethod().invoke(null, pos, global, new TugArgs(values));
+                Object res = method.toMethod().invoke(null, pos, global, new TugArgs(values));
+                if (res instanceof TugError err) {
+                    err.add(pos);
+                }
+                return res;
             } catch (IllegalAccessException e) {
                 if (Interpreter.java_stacktrace) e.printStackTrace();
                 return new TugError(

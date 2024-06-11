@@ -151,6 +151,10 @@ public class Parser {
                 return true;
             } else if (tok.matches(TokenType.ADDADD, TokenType.SUBSUB)) {
                 tasks.add(new Task(TaskType.POSTFIX_STATEMENT, identifier, tok));
+            } else {
+                return new TugError(
+                    "unexpected token", tok.pos
+                );
             }
         } else if (tok.match(TokenType.KW_IF)) {
             Object if_expr = this.if_expr();
@@ -177,6 +181,8 @@ public class Parser {
             if (expr instanceof TugError) return expr;
             tasks.add(new Task(TaskType.RET_STATEMENT, expr));
             return true;
+        } else if (tok.match(TokenType.SEMICOLON)) {
+            // Ignore
         } else return new TugError(
             "unexpected token", tok.pos
         );
@@ -435,6 +441,12 @@ public class Parser {
                     "expected ')'", tok.pos
                 );
                 break;
+            } else if (tok.match(TokenType.COLON)) {
+                advance();
+                if (!tok.match(TokenType.IDENTIFIER)) return new TugError(
+                    "expected identifier", tok.pos
+                );
+                advance();
             }
             if (tok.match(TokenType.COMMA)) advance();
             else if (!tok.match(TokenType.RPAREN)) return new TugError(

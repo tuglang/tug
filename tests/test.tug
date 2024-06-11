@@ -1,0 +1,7 @@
+a = 0
+list1 = {}
+loop 10000 {
+    list1[#list1] = a
+    a++
+}
+print(list1)

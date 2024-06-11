@@ -42,6 +42,7 @@ public enum TokenType {
     DOT,
     COMMA,
     SEMICOLON,
+    COLON,
     LPAREN,
     RPAREN,
     LSQUARE,

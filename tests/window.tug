@@ -1,0 +1,5 @@
+_window = import("_window")
+_window.new = _window._new
+_window._new = none
+
+ret _window

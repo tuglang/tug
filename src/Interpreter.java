@@ -10,8 +10,9 @@ public class Interpreter {
     public static boolean skip_eviron = false;
     public static boolean java_stacktrace = false;
     public static String version = "0.1.0";
-    public static int compile_version = 0;
+    public static int compile_version = 1;
     public static boolean no_base64 = false;
+    public static TugTable args = new TugTable();
 
     public Interpreter(ArrayList<Task> tasks, TugTable global) {
         this.tasks = tasks;
@@ -65,6 +66,7 @@ public class Interpreter {
             }
             if (res instanceof TugError) return res;
             if (res instanceof TugObject) return res;
+            if (res instanceof Task) return res;
         }
         return null;
     }
@@ -410,55 +412,101 @@ public class Interpreter {
             Token op = expr.op;
             if (expr.isunary()) {
                 if (right instanceof TugError) return right;
-                TugObject tugleft = (TugObject) left;
+                TugObject tugright = (TugObject) right;
 
                 if (op.match(TokenType.SUB)) {
                     if (!(right instanceof TugNumber)) return new TugError(
                         "attempt to unary " + ((TugObject) right).type,
                         op.pos
                     );
-                    right = ((TugNumber) right).mul(new TugNumber(-1));
+                    if (tugright instanceof TugTable table) {
+                        result = table.neg(op.pos, global);
+                    } else result = ((TugNumber) right).mul(new TugNumber(-1));
+                } else if (op.match(TokenType.ADD)) {
+                    if (tugright instanceof TugTable table) {
+                        result = table.pos(op.pos, global);
+                    } else result = right;
                 } else if (op.match(TokenType.NOT)) {
-                    result = tugleft.not();
+                    if (tugright instanceof TugTable table) {
+                        result = table.not(op.pos, global);
+                    } else result = tugright.not();
                 }
 
-                return right;
+                return result;
             } else {
                 TugObject tugleft = (TugObject) left;
                 TugObject tugright = (TugObject) right;
-                if (op.match(TokenType.ADD)) {
-                    result = tugleft.add(tugright);
-                } else if (op.match(TokenType.SUB)) {
-                    result = tugleft.sub(tugright);
-                } else if (op.match(TokenType.MUL)) {
-                    result = tugleft.mul(tugright);
-                } else if (op.match(TokenType.DIV)) {
-                    result = tugleft.div(tugright);
-                } else if (op.match(TokenType.POW)) {
-                    result = tugleft.pow(tugright);
-                } else if (op.match(TokenType.MOD)) {
-                    result = tugleft.mod(tugright);
-                } else if (op.match(TokenType.EQEQ)) {
-                    result = tugleft.eq(tugright);
-                } else if (op.match(TokenType.NEQ)) {
-                    result = tugleft.neq(tugright);
-                } else if (op.match(TokenType.GT)) {
-                    result = tugleft.gt(tugright);
-                } else if (op.match(TokenType.GE)) {
-                    result = tugleft.ge(tugright);
-                } else if (op.match(TokenType.LT)) {
-                    result = tugleft.lt(tugright);
-                } else if (op.match(TokenType.LE)) {
-                    result = tugleft.le(tugright);
-                } else if (op.match(TokenType.AND)) {
-                    result = tugleft.and(tugright);
-                } else if (op.match(TokenType.OR)) {
-                    result = tugleft.or(tugright);
-                } else if (op.match(TokenType.DOT)) {
-                    result = tugleft.index(tugright);
+                if (tugleft instanceof TugTable table) {
+                    if (op.match(TokenType.ADD)) {
+                        result = table.add(op.pos, global, tugright);
+                    } else if (op.match(TokenType.SUB)) {
+                        result = table.sub(op.pos, global, tugright);
+                    } else if (op.match(TokenType.MUL)) {
+                        result = table.mul(op.pos, global, tugright);
+                    } else if (op.match(TokenType.DIV)) {
+                        result = table.div(op.pos, global, tugright);
+                    } else if (op.match(TokenType.POW)) {
+                        result = table.pow(op.pos, global, tugright);
+                    } else if (op.match(TokenType.MOD)) {
+                        result = table.mod(op.pos, global, tugright);
+                    } else if (op.match(TokenType.EQEQ)) {
+                        result = table.eq(op.pos, global, tugright);
+                    } else if (op.match(TokenType.NEQ)) {
+                        result = table.neq(op.pos, global, tugright);
+                    } else if (op.match(TokenType.GT)) {
+                        result = table.gt(op.pos, global, tugright);
+                    } else if (op.match(TokenType.GE)) {
+                        result = table.ge(op.pos, global, tugright);
+                    } else if (op.match(TokenType.LT)) {
+                        result = table.lt(op.pos, global, tugright);
+                    } else if (op.match(TokenType.LE)) {
+                        result = table.le(op.pos, global, tugright);
+                    } else if (op.match(TokenType.AND)) {
+                        result = table.and(op.pos, global, tugright);
+                    } else if (op.match(TokenType.OR)) {
+                        result = table.or(op.pos, global, tugright);
+                    } else if (op.match(TokenType.DOT)) {
+                        result = table.index(op.pos, global, tugright);
+                    }
+                } else {
+                    if (op.match(TokenType.ADD)) {
+                        result = tugleft.add(tugright);
+                    } else if (op.match(TokenType.SUB)) {
+                        result = tugleft.sub(tugright);
+                    } else if (op.match(TokenType.MUL)) {
+                        result = tugleft.mul(tugright);
+                    } else if (op.match(TokenType.DIV)) {
+                        result = tugleft.div(tugright);
+                    } else if (op.match(TokenType.POW)) {
+                        result = tugleft.pow(tugright);
+                    } else if (op.match(TokenType.MOD)) {
+                        result = tugleft.mod(tugright);
+                    } else if (op.match(TokenType.EQEQ)) {
+                        result = tugleft.eq(tugright);
+                    } else if (op.match(TokenType.NEQ)) {
+                        result = tugleft.neq(tugright);
+                    } else if (op.match(TokenType.GT)) {
+                        result = tugleft.gt(tugright);
+                    } else if (op.match(TokenType.GE)) {
+                        result = tugleft.ge(tugright);
+                    } else if (op.match(TokenType.LT)) {
+                        result = tugleft.lt(tugright);
+                    } else if (op.match(TokenType.LE)) {
+                        result = tugleft.le(tugright);
+                    } else if (op.match(TokenType.AND)) {
+                        result = tugleft.and(tugright);
+                    } else if (op.match(TokenType.OR)) {
+                        result = tugleft.or(tugright);
+                    } else if (op.match(TokenType.DOT)) {
+                        result = tugleft.index(tugright);
+                    }
                 }
 
-                if (result instanceof TugError err) return err;
+                if (result instanceof TugError err) {
+                    err.pos = op.pos;
+                    return err;
+                }
+                ((TugObject) result).pos = op.pos;
 
                 return result;
             }

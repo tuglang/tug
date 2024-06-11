@@ -1,0 +1,77 @@
+math = import("modules/math.tugb")
+theta = 0.07
+phi = 0.02
+
+a = 0
+ba = 0
+
+main_str = {'.', ',', '-', '~', ':', ';', '=', '!', '*', '#', '$', '@'}
+print("\n"*50)
+
+z = {}
+b = {}
+
+loop {
+    j = 0
+    l = 0
+    loop 1760 {
+        z[l] = 0
+        b[j=l] = ' '
+        l++
+    }
+
+    e = math.sin(a)
+    g = math.cos(a)
+
+    loop if j < 6.28 {
+        j += theta
+        i = 0
+        loop if i < 6.28 {
+            i += phi
+
+            c = math.sin(i)
+            l = math.cos(i)
+            d = math.sin(j)
+            f = math.cos(j)
+
+            h = d + 2
+            D = 1 / (c * h * e + f * g + 5)
+            
+            t = c * h * g - f * e
+
+            x = math.floor(40 + 30 * D * (l * h * m - t * n))
+            y = math.floor(12 + 15 * D * (l * h * n + t * m))
+            o = math.floor(x + (80 * y))
+            N = math.floor(8 * ((f * e - c * d * g) * m - c * d * e - f * g - l * d * n))
+
+            if 22 > y && y > 0 && 80 > x && x > 0 {
+                if z[o] == none {
+                    b[o + 1] = '.'
+                } else {
+                    z[o] = 0
+                    if N > 0 {
+                        b[o] = main_str[N]
+                    } else {
+                        b[o + 1] = '.'
+                    }
+                }
+            }
+        }
+    }
+
+    print("\n"*50)
+    res = ""
+    l = 0
+    loop 1760 {
+        if l % 80 != 0 {
+            res += b[l]
+        } else {
+            res += "\n"
+        }
+        l++
+    }
+    print(res)
+
+    a += 0.16
+    ba += 0.08
+}

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch4jConfig>
+  <dontWrapJar>false</dontWrapJar>
+  <headerType>console</headerType>
+  <jar>C:\Users\Admin\Documents\Tug\build\tug.jar</jar>
+  <outfile>C:\Users\Admin\Documents\Tug\build\tug.exe</outfile>
+  <errTitle></errTitle>
+  <cmdLine></cmdLine>
+  <chdir></chdir>
+  <priority>normal</priority>
+  <downloadUrl></downloadUrl>
+  <supportUrl></supportUrl>
+  <stayAlive>false</stayAlive>
+  <restartOnCrash>false</restartOnCrash>
+  <manifest></manifest>
+  <icon>C:\Users\Admin\Documents\Tug\build\tug.ico</icon>
+  <singleInstance>
+    <mutexName>tug</mutexName>
+    <windowTitle>tug</windowTitle>
+  </singleInstance>
+  <jre>
+    <path>./runtime;%TUG_HOME%/runtime</path>
+    <requiresJdk>false</requiresJdk>
+    <requires64Bit>true</requires64Bit>
+    <minVersion></minVersion>
+    <maxVersion></maxVersion>
+  </jre>
+  <versionInfo>
+    <fileVersion>0.1.0.0</fileVersion>
+    <txtFileVersion>.</txtFileVersion>
+    <fileDescription>Tug Console Standalone Interpreter</fileDescription>
+    <copyright>MIT License</copyright>
+    <productVersion>0.1.0.0</productVersion>
+    <txtProductVersion>.</txtProductVersion>
+    <productName>Tug Console Standalone Interpreter</productName>
+    <companyName></companyName>
+    <internalName>tug</internalName>
+    <originalFilename>tug.exe</originalFilename>
+    <trademarks></trademarks>
+    <language>ENGLISH_US</language>
+  </versionInfo>
+  <messages>
+    <startupErr>an error occurred while starting the application</startupErr>
+    <jreNotFoundErr>java runtime is missing</jreNotFoundErr>
+    <jreVersionErr>java runtime is missing</jreVersionErr>
+    <launcherErr>the java runtime is corrupted</launcherErr>
+    <instanceAlreadyExistsMsg>an application instance is already running</instanceAlreadyExistsMsg>
+  </messages>
+</launch4jConfig>

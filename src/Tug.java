@@ -6,6 +6,8 @@ import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamClass;
+import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -19,6 +21,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.Set;
@@ -27,7 +30,6 @@ import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 
 public class Tug {
-    public static String TUG_HOME;
 
     @SuppressWarnings("unchecked")
     public static Object run(String text, TugTable global, String fn) {
@@ -166,15 +168,22 @@ public class Tug {
 
         byte bytes[] = Tug.serialize(result);
         byte r[] = new byte[bytes.length+4];
-        r[0] = (byte) (0x74 << 8);
-        r[1] = (byte) (0x75 << 8);
-        r[2] = (byte) (0x67 << 4);
+        r[0] = (byte) 'T';
+        r[1] = (byte) 'U';
+        r[2] = (byte) 'G';
         r[3] = (byte) Interpreter.compile_version;
         for (int idx = 0; idx < bytes.length; idx++) {
             r[idx + 4] = bytes[idx];
         }
 
         if (!Interpreter.no_base64) r = Base64.getEncoder().encode(r);
+        else
+            try {
+                r = new String(r, "ISO-8859-1").getBytes("ISO-8859-1");
+            } catch (UnsupportedEncodingException e) {
+                System.out.println("Encoding failed..");
+                System.exit(1);
+            }
 
         try {
             Files.write(result_path, r);
@@ -258,29 +267,38 @@ public class Tug {
     }
 
     public static void main(String[] args) {
+        ArgsParser argsParser = new ArgsParser();
+        argsParser.parse(args);
         Interpreter.start_time = System.nanoTime() / 1000000000d;
-        for (int i = 0; i < args.length; i++) {
-            String arg = args[i];
+        for (String arg : argsParser.getOptions()) {
             if (arg.equals("--skip-eviron")) {
                 Interpreter.skip_eviron = true;
             } else if (arg.equals("--java-stacktrace")) {
                 Interpreter.java_stacktrace = true;
             } else if (arg.equals("--no-base64")) {
                 Interpreter.no_base64 = true;
-            }
+            } else {
+                System.out.println("invalid option: " + arg);
+                System.exit(1);
+                return;
+            };
+        }
+        for (String arg : argsParser.getArguments()) {
+            Interpreter.args.set((double) Interpreter.args.size(), arg);
         }
         if (System.getenv("TUG_HOME") == null && !Interpreter.skip_eviron) {
             System.out.println("evironment variable 'TUG_HOME' isn't set");
             System.exit(1);
             return;
         }
-        if (args.length >= 1) {
-            if (args[0].equals("run")) {
-                if (args.length < 2) {
-                    System.out.println("missing arguments");
-                } else if (args.length > 2) {
+        List<String> commands = argsParser.getCommands();
+        if (commands.size() >= 1) {
+            String command = commands.get(0);
+            if (command.equals("run") || command.equals("time")) {
+                if (commands.size() < 2) {
+                    System.out.println("missing argument: <file>");
                 }
-                Path path = Paths.get(args[args.length-1]);
+                Path path = Paths.get(commands.get(1));
                 String str;
                 try {
                     str = new String(Files.readAllBytes(path));
@@ -292,9 +310,58 @@ public class Tug {
                 Path abspath = path.toAbsolutePath();
                 Path parentdir = abspath.getParent();
                 System.setProperty("user.dir", parentdir.toString());
+                PrintStream stdout = System.out;
+                if (command.equals("time")) {
+                    System.setOut(new java.io.PrintStream(new java.io.OutputStream() {
+                        @Override public void write(int b) {}
+                        }) {
+                            @Override public void flush() {}
+                            @Override public void close() {}
+                            @Override public void write(int b) {}
+                            @Override public void write(byte[] b) {}
+                            @Override public void write(byte[] buf, int off, int len) {}
+                            @Override public void print(boolean b) {}
+                            @Override public void print(char c) {}
+                            @Override public void print(int i) {}
+                            @Override public void print(long l) {}
+                            @Override public void print(float f) {}
+                            @Override public void print(double d) {}
+                            @Override public void print(char[] s) {}
+                            @Override public void print(String s) {}
+                            @Override public void print(Object obj) {}
+                            @Override public void println() {}
+                            @Override public void println(boolean x) {}
+                            @Override public void println(char x) {}
+                            @Override public void println(int x) {}
+                            @Override public void println(long x) {}
+                            @Override public void println(float x) {}
+                            @Override public void println(double x) {}
+                            @Override public void println(char[] x) {}
+                            @Override public void println(String x) {}
+                            @Override public void println(Object x) {}
+                            @Override public java.io.PrintStream printf(String format, Object... args) { return this; }
+                            @Override public java.io.PrintStream printf(java.util.Locale l, String format, Object... args) { return this; }
+                            @Override public java.io.PrintStream format(String format, Object... args) { return this; }
+                            @Override public java.io.PrintStream format(java.util.Locale l, String format, Object... args) { return this; }
+                            @Override public java.io.PrintStream append(CharSequence csq) { return this; }
+                            @Override public java.io.PrintStream append(CharSequence csq, int start, int end) { return this; }
+                            @Override public java.io.PrintStream append(char c) { return this; }
+                        });
+                }
+                double start_time = System.nanoTime() / 1000000000d;
                 Object res = Tug.run(str, TugTable.newDefault(), abspath.toString());
+                double end_time = System.nanoTime() / 1000000000d - start_time;
+                if (command.equals("time")) System.setOut(stdout);
                 if (res instanceof TugError err) {
                     System.out.println(err.as_string());
+                    if (command.equals("time")) {
+                        System.out.print("\nprogram took: ");
+                        System.out.print(end_time);
+                        System.out.println("s");
+                        System.out.print("main took: ");
+                        System.out.print(System.nanoTime() / 1000000000d - Interpreter.start_time);
+                        System.out.println("s");
+                    }
                     System.exit(1);
                     return;
                 }
@@ -314,25 +381,58 @@ public class Tug {
                     }
                     if (!alives) break;
                 }
-            } else if (args[0].equals("jcompile")) {
+                if (command.equals("time")) {
+                    System.out.print("program took: ");
+                    System.out.print(end_time);
+                    System.out.println("s");
+                    System.out.print("main took: ");
+                    System.out.print(System.nanoTime() / 1000000000d - Interpreter.start_time);
+                    System.out.println("s");
+                }
+            } else if (command.equals("jcompile")) {
                 Tug.jcompile(args[1]);
-            } else if (args[0].equals("version")) {
+            } else if (command.equals("version")) {
                 System.out.println("Tug v0.1.0  Copyright (C) 2024 Morlus");
                 System.out.println("Interpreter: v" + Interpreter.version);
-                System.out.println("Compiler: v" + Interpreter.compile_version);
-            } else if (args[0].equals("license")) {
+                System.out.println("Java Compiler: v" + Interpreter.compile_version);
+            } else if (command.equals("env")) {
+                if (System.getenv("TUG_HOME") == null) {
+                }
+                System.out.println(System.getenv("TUG_HOME").replaceAll(";", ", "));
+            } else if (command.equals("license")) {
+                System.out.println("""
+                Copyright (c) 2024 Morlus
+
+                Permission is hereby granted, free of charge, to any person obtaining a copy
+                of this software and associated documentation files (the "Software"), to deal
+                in the Software without restriction, including without limitation the rights
+                to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+                copies of the Software, and to permit persons to whom the Software is
+                furnished to do so, subject to the following conditions:
                 
-            } else if (args[0].equals("dir")) {
+                The above copyright notice and this permission notice shall be included in all
+                copies or substantial portions of the Software.
+                
+                THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+                IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+                FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+                AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+                LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+                OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+                SOFTWARE.""");
+            } else if (command.equals("dir")) {
                 System.out.print("home: ");
                 System.out.println(System.getenv("TUG_HOME") == null ? "none" : System.getenv("TUG_HOME"));
                 System.out.print("current: ");
                 System.out.println(new File("").getAbsolutePath());
-            } else if (args[0].equals("help")) {
+            } else if (command.equals("help")) {
                 System.out.println("Commands:");
                 System.out.println("  run - Run a tug program from specified file");
                 System.out.println("  jcompile - Compile java code into tug module (.tugb file)");
-                System.out.println("  version - Compile java code into tug module (.tugb file)");
-            } else if (args[0].startsWith("-") || args[0].startsWith("--")) {
+                System.out.println("  dir - Get current directory and 'TUG_HOME'");
+                System.out.println("  version - Get current Tug version");
+                System.out.println("  license - Get full Tug license");
+            } else if (command.startsWith("-") || command.startsWith("--")) {
                 Tug.shell();
             } else {
                 System.out.println("no such command");

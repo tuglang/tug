@@ -117,6 +117,8 @@ public class Lexer {
                 }
             } else if (current_char == '.') {
                 tokens.add(new Token(TokenType.DOT, pos.copy()));
+            } else if (current_char == ':') {
+                tokens.add(new Token(TokenType.COLON, pos.copy()));
             } else if (current_char == ';') {
                 tokens.add(new Token(TokenType.SEMICOLON, pos.copy()));
             } else if (current_char == '(') {
@@ -172,11 +174,23 @@ public class Lexer {
 
         StringBuilder builder = new StringBuilder();
 
-        while (current_char != '\0' && current_char != deli && current_char != '\n') {
+        while (current_char != '\0' && current_char != deli) {
             if (current_char == '\\') {
                 advance();
                 if (current_char == 'n') builder.append("\n");
+                else if (current_char == 't') builder.append("\t");
+                else if (current_char == '0') builder.append("\0");
+                else if (current_char == 'r') builder.append("\r");
+                else if (current_char == 'f') builder.append("\f");
+                else if (current_char == 'b') builder.append("\b");
+                else if (current_char == '\\') builder.append("\\");
+                else if (current_char == '\'') builder.append("'");
+                else if (current_char == '"') builder.append("\"");
                 else builder.append("\\".concat(String.valueOf(current_char)));
+                advance();
+                continue;
+            } else if (current_char == '\n') {
+                builder.append("\n");
                 advance();
                 continue;
             }

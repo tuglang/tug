@@ -139,7 +139,13 @@ public class TugString extends TugObject {
                 "attempt to index " + super.type + " with integer", super.pos
             );
 
-            return new TugString(String.valueOf(this.value.charAt(num.value.intValue())));
+            try {
+                return new TugString(String.valueOf(this.value.charAt(num.value.intValue())));
+            } catch (IndexOutOfBoundsException e) {
+                return new TugError(
+                    "index out of range", super.pos
+                );
+            }
         }
         return new TugError(
             "attempt to index " + super.type + " with " + value.type, super.pos
